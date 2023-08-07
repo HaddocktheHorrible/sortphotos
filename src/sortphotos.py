@@ -22,13 +22,16 @@ import filecmp
 from datetime import datetime, timedelta
 import re
 import locale
-import reverse_geocode
+import reverse_geocoder
+import country_converter
 
 # Setting locale to the 'local' value
 locale.setlocale(locale.LC_ALL, '')
 
 exiftool_location = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'Image-ExifTool', 'exiftool')
 
+# load country converter data once for speed
+cc = country_converter.CountryConverter()
 
 # -------- convenience methods -------------
 
@@ -267,10 +270,14 @@ class ExifTool(object):
             tags['EXIF:GpsLat'] = lat
             tags['EXIF:GpsLon'] = lon
             if lat and lon:
-                location = reverse_geocode.get([lat,lon])
-                tags['Location:country_code'] = location["country_code"]
-                tags['Location:city'] = location["city"]
-                tags['Location:country'] = location["country"]
+                location = reverse_geocoder.get([lat,lon])
+                tags['Location:city'] = location["name"]
+                tags['Location:admin1'] = location["admin1"]
+                tags['Location:admin2'] = location["admin2"]
+                iso2 = location["cc"]
+                tags['Location:country_iso2'] = iso2
+                tags['Location:country_iso3'] = cc.convert(iso2, src='iso2', to='iso3')
+                tags['Location:country_name_short'] = cc.convert(iso2, src='iso2', to='name_short')
             return tags
         except ValueError:
             sys.stdout.write('No files to parse or invalid data\n')
@@ -414,15 +421,15 @@ def sortPhotos(src_dir, dest_dir, sort_format, rename_format, recursive=False,
 
 
         # create folder structure
-
-        country =  data.get("Location:country","")
-        city = data.get("Location:city", '')
-        country_code = data.get("Location:country_code", '')
-
-        sort_format_geo = sort_format.replace('%country',country)
-        sort_format_geo = sort_format_geo.replace('%city',city)
-        sort_format_geo = sort_format_geo.replace('%country_code',country_code)
-        dir_structure = date.strftime(sort_format_geo)
+        geo_replacements = {
+            '%city' : data.get("Location:city", ''),
+            '%admin1' : data.get("Location:admin1", ''),
+            '%admin2' : data.get("Location:admin2", ''),
+            '%country_name' : data.get("Location:country_name_short",""),
+            '%country_iso2' : data.get("Location:country_iso2", ''),
+            '%country_iso3' : data.get("Location:country_iso3", '')
+        }
+        dir_structure = date.strftime(sort_format.replace(geo_replacements))
         dirs = dir_structure.split('/')
         dest_file = dest_dir
         for thedir in dirs:
@@ -518,13 +525,17 @@ def main():
     parser.add_argument('-c', '--copy', action='store_true', help='copy files instead of move')
     parser.add_argument('-s', '--silent', action='store_true', help='don\'t display parsing details.')
     parser.add_argument('-t', '--test', action='store_true', help='run a test.  files will not be moved/copied\ninstead you will just a list of would happen')
-    parser.add_argument('--sort', type=str, default='%Y/%m-%b-%country-%city',
-                        help="choose destination folder structure using datetime format \n\
+    parser.add_argument('--sort', type=str, default='%Y/%m-%b',
+                        help="choose destination folder structure using datetime and location format \n\
     https://docs.python.org/2/library/datetime.html#strftime-and-strptime-behavior. \n\
     Use forward slashes / to indicate subdirectory(ies) (independent of your OS convention). \n\
+    Allowable location fields include '%%city', '%%admin1', '%%admin2',  \n\
+    '%%country_name', '%%country_iso2', and '%%country_iso3'.  For U.S. locations, 'admin1' \n\
+    is equivalent to the governing county, whereas 'admin2' is the governing state. Country \n\
+    two- and three-letter ISO 3166 codes are given by 'country_iso2' and 'country_iso3', \n\
+    respectively. The country common 'short' name is given by 'country_name'. \n\
     The default is '%%Y/%%m-%%b', which separates by year then month \n\
-    with both the month number and name (e.g., 2012/02-Feb). \n\
-    Use %%city, %%country and %%country_code for location.")
+    with both the month number and name (e.g., 2012/02-Feb).")
     parser.add_argument('--rename', type=str, default=None,
                         help="rename file using format codes \n\
     https://docs.python.org/2/library/datetime.html#strftime-and-strptime-behavior. \n\
