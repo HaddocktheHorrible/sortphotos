@@ -194,7 +194,7 @@ def get_exif_location(exif_data):
     gps_latitude_ref = _get_if_exist(exif_data, 'EXIF:GPSLatitudeRef')
     gps_longitude = _get_if_exist(exif_data, 'EXIF:GPSLongitude')
     gps_longitude_ref = _get_if_exist(exif_data, 'EXIF:GPSLongitudeRef')
-
+    
     if gps_latitude and gps_latitude_ref and gps_longitude and gps_longitude_ref:
         lat = gps_latitude
         if gps_latitude_ref != 'N':
@@ -276,9 +276,13 @@ def sortPhotos(src_dir, dest_dir, sort_format, rename_format, recursive=False,
     sort_format : str
         format code for how you want your photos sorted
         (https://docs.python.org/2/library/datetime.html#strftime-and-strptime-behavior)
+        for geo locations, use '%city', '%admin1' ('%state'), 
+        '%admin2' ('%county'), '%country_name', '%country_iso2', or '%country_iso3'
     rename_format : str
         format code for how you want your files renamed
         (https://docs.python.org/2/library/datetime.html#strftime-and-strptime-behavior)
+        for geo locations, use '%city', '%admin1' ('%state'), 
+        '%admin2' ('%county'), '%country_name', '%country_iso2', or '%country_iso3'
         None to not rename file
     recursive : bool
         True if you want src_dir to be searched recursively for files (False to search only in top-level of src_dir)
@@ -382,6 +386,9 @@ def sortPhotos(src_dir, dest_dir, sort_format, rename_format, recursive=False,
             data['Location:country_iso2'] = iso2
             data['Location:country_iso3'] = cc.convert(iso2, src='iso2', to='iso3')
             data['Location:country_name_short'] = cc.convert(iso2, src='iso2', to='name_short')
+        elif verbose:
+            print('No valid GPS data was found using the specified tags. Location path names will be ignored.')
+            print()
 
         # check if no valid date found
         if not date:
@@ -409,7 +416,9 @@ def sortPhotos(src_dir, dest_dir, sort_format, rename_format, recursive=False,
         geo_replacements = {
             '%city' : data.get("Location:city", ''),
             '%admin1' : data.get("Location:admin1", ''),
+            '%state' : data.get("Location:admin1", ''),
             '%admin2' : data.get("Location:admin2", ''),
+            '%county' : data.get("Location:admin2", ''),
             '%country_name' : data.get("Location:country_name_short",""),
             '%country_iso2' : data.get("Location:country_iso2", ''),
             '%country_iso3' : data.get("Location:country_iso3", '')
@@ -430,7 +439,10 @@ def sortPhotos(src_dir, dest_dir, sort_format, rename_format, recursive=False,
 
         if rename_format is not None and date is not None:
             _, ext = os.path.splitext(filename)
-            filename = date.strftime(rename_format) + ext.lower()
+            geo_format = rename_format
+            for key, value in geo_replacements.items():
+                geo_format = geo_format.replace(key, value)
+            filename = date.strftime(geo_format) + ext.lower()
 
         # setup destination file
         dest_file = os.path.join(dest_file, filename)
@@ -517,9 +529,9 @@ def main():
                         help="choose destination folder structure using datetime and location format \n\
     https://docs.python.org/2/library/datetime.html#strftime-and-strptime-behavior. \n\
     Use forward slashes / to indicate subdirectory(ies) (independent of your OS convention). \n\
-    Allowable location fields include '%%city', '%%admin1', '%%admin2',  \n\
+    Allowable location fields include '%%city', '%%admin1' (or '%%state'), '%%admin2' (or '%%county'),  \n\
     '%%country_name', '%%country_iso2', and '%%country_iso3'.  For U.S. locations, 'admin1' \n\
-    is equivalent to the governing state, whereas 'admin2' is the governing county. Country \n\
+    is equivalent to the governing 'state', whereas 'admin2' is the governing 'county'. Country \n\
     two- and three-letter ISO 3166 codes are given by 'country_iso2' and 'country_iso3', \n\
     respectively. The country common 'short' name is given by 'country_name'. \n\
     The default is '%%Y/%%m-%%b', which separates by year then month \n\
