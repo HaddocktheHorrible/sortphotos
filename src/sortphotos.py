@@ -373,8 +373,6 @@ def sortPhotos(src_dir, dest_dir, sort_format, rename_format, recursive=False,
             sys.stdout.flush()
         
         lat, lon = get_exif_location(data)
-        data['EXIF:GpsLat'] = lat
-        data['EXIF:GpsLon'] = lon
         if lat and lon:
             location = reverse_geocoder.get((lat,lon))
             data['Location:city'] = location["name"]
@@ -416,9 +414,10 @@ def sortPhotos(src_dir, dest_dir, sort_format, rename_format, recursive=False,
             '%country_iso2' : data.get("Location:country_iso2", ''),
             '%country_iso3' : data.get("Location:country_iso3", '')
         }
+        geo_format = sort_format
         for key, value in geo_replacements.items():
-            sort_format = sort_format.replace(key, value)
-        dir_structure = date.strftime(sort_format)
+            geo_format = geo_format.replace(key, value)
+        dir_structure = date.strftime(geo_format)
         dirs = dir_structure.split('/')
         dest_file = dest_dir
         for thedir in dirs:
@@ -520,7 +519,7 @@ def main():
     Use forward slashes / to indicate subdirectory(ies) (independent of your OS convention). \n\
     Allowable location fields include '%%city', '%%admin1', '%%admin2',  \n\
     '%%country_name', '%%country_iso2', and '%%country_iso3'.  For U.S. locations, 'admin1' \n\
-    is equivalent to the governing county, whereas 'admin2' is the governing state. Country \n\
+    is equivalent to the governing state, whereas 'admin2' is the governing county. Country \n\
     two- and three-letter ISO 3166 codes are given by 'country_iso2' and 'country_iso3', \n\
     respectively. The country common 'short' name is given by 'country_name'. \n\
     The default is '%%Y/%%m-%%b', which separates by year then month \n\
