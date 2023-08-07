@@ -181,22 +181,8 @@ def check_for_early_morning_photos(date, day_begins):
 
     return date
 
-# read tags using exifread
 ### helper functions, for geocoordinates
 
-def _convert_to_degress(value):
-    """
-    Helper function to convert the GPS coordinates stored in the EXIF to degress in float format
-    :param value:
-    :type value: exifread.utils.Ratio
-    :rtype: float
-    """
-    d = float(value.values[0].num) / float(value.values[0].den)
-    m = float(value.values[1].num) / float(value.values[1].den)
-    s = float(value.values[2].num) / float(value.values[2].den)
-
-    return d + (m / 60.0) + (s / 3600.0)
-    
 def get_exif_location(exif_data):
     """
     Returns the latitude and longitude, if available, from the provided exif_data (obtained through get_exif_data above)
@@ -204,18 +190,18 @@ def get_exif_location(exif_data):
     lat = None
     lon = None
 
-    gps_latitude = _get_if_exist(exif_data, 'GPS GPSLatitude')
-    gps_latitude_ref = _get_if_exist(exif_data, 'GPS GPSLatitudeRef')
-    gps_longitude = _get_if_exist(exif_data, 'GPS GPSLongitude')
-    gps_longitude_ref = _get_if_exist(exif_data, 'GPS GPSLongitudeRef')
+    gps_latitude = _get_if_exist(exif_data, 'EXIF:GPSLatitude')
+    gps_latitude_ref = _get_if_exist(exif_data, 'EXIF:GPSLatitudeRef')
+    gps_longitude = _get_if_exist(exif_data, 'EXIF:GPSLongitude')
+    gps_longitude_ref = _get_if_exist(exif_data, 'EXIF:GPSLongitudeRef')
 
     if gps_latitude and gps_latitude_ref and gps_longitude and gps_longitude_ref:
-        lat = _convert_to_degress(gps_latitude)
-        if gps_latitude_ref.values[0] != 'N':
+        lat = gps_latitude
+        if gps_latitude_ref != 'N':
             lat = 0 - lat
 
-        lon = _convert_to_degress(gps_longitude)
-        if gps_longitude_ref.values[0] != 'E':
+        lon = gps_longitude
+        if gps_longitude_ref != 'E':
             lon = 0 - lon
 
     return lat, lon
@@ -265,20 +251,7 @@ class ExifTool(object):
 
     def get_metadata(self, *args):
         try:
-            tags = json.loads(self.execute(*args))
-            lat, lon = get_exif_location(tags)
-            tags['EXIF:GpsLat'] = lat
-            tags['EXIF:GpsLon'] = lon
-            if lat and lon:
-                location = reverse_geocoder.get([lat,lon])
-                tags['Location:city'] = location["name"]
-                tags['Location:admin1'] = location["admin1"]
-                tags['Location:admin2'] = location["admin2"]
-                iso2 = location["cc"]
-                tags['Location:country_iso2'] = iso2
-                tags['Location:country_iso3'] = cc.convert(iso2, src='iso2', to='iso3')
-                tags['Location:country_name_short'] = cc.convert(iso2, src='iso2', to='name_short')
-            return tags
+            return json.loads(self.execute(*args))
         except ValueError:
             sys.stdout.write('No files to parse or invalid data\n')
             exit()
@@ -338,7 +311,7 @@ def sortPhotos(src_dir, dest_dir, sort_format, rename_format, recursive=False,
         raise Exception('Source directory does not exist')
 
     # setup arguments to exiftool
-    args = ['-j', '-a', '-G']
+    args = ['-j', '-a', '-G', '-n']
 
     # setup tags to ignore
     if use_only_tags is not None:
@@ -354,6 +327,7 @@ def sortPhotos(src_dir, dest_dir, sort_format, rename_format, recursive=False,
 
     else:
         args += ['-time:all']
+        args += ['-gps:all']
 
 
     if recursive:
@@ -397,6 +371,19 @@ def sortPhotos(src_dir, dest_dir, sort_format, rename_format, recursive=False,
             sys.stdout.write('\r')
             sys.stdout.write('[%-20s] %d of %d ' % ('='*numdots, idx+1, num_files))
             sys.stdout.flush()
+        
+        lat, lon = get_exif_location(data)
+        data['EXIF:GpsLat'] = lat
+        data['EXIF:GpsLon'] = lon
+        if lat and lon:
+            location = reverse_geocoder.get((lat,lon))
+            data['Location:city'] = location["name"]
+            data['Location:admin1'] = location["admin1"]
+            data['Location:admin2'] = location["admin2"]
+            iso2 = location["cc"]
+            data['Location:country_iso2'] = iso2
+            data['Location:country_iso3'] = cc.convert(iso2, src='iso2', to='iso3')
+            data['Location:country_name_short'] = cc.convert(iso2, src='iso2', to='name_short')
 
         # check if no valid date found
         if not date:
@@ -429,7 +416,9 @@ def sortPhotos(src_dir, dest_dir, sort_format, rename_format, recursive=False,
             '%country_iso2' : data.get("Location:country_iso2", ''),
             '%country_iso3' : data.get("Location:country_iso3", '')
         }
-        dir_structure = date.strftime(sort_format.replace(geo_replacements))
+        for key, value in geo_replacements.items():
+            sort_format = sort_format.replace(key, value)
+        dir_structure = date.strftime(sort_format)
         dirs = dir_structure.split('/')
         dest_file = dest_dir
         for thedir in dirs:
